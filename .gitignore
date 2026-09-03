@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+
+# 环境变量（含密码，不能进 Git）
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# 日志
+*.log
