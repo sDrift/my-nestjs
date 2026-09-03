@@ -6,6 +6,8 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import type { Request, Response, NextFunction } from 'express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
@@ -34,7 +36,15 @@ async function bootstrap() {
   // 对照 Java 的 Spring Security 默认加的 Security Headers
   // 前端(Vue3)理解：像 Vite 配置里 csp 头、<meta http-equiv> 标签，但服务端统一加，
   //   你前端什么都不用做就自动带上这些头
-  app.use(helmet());
+  //
+  // 例外：Swagger UI 用了 inline 脚本/样式，会被默认 CSP 拦死（页面空白或样式加载不出）
+  //   所以对 /api/docs* 路径跳过 helmet，业务接口仍受保护
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api/docs')) {
+      return next();
+    }
+    return helmet()(req, res, next);
+  });
 
   // CORS：跨域资源共享，决定"哪些前端域名能调这个 API"
   //   - 浏览器有同源策略：前端在 https://a.com 调 https://b.com/api 会被拦
@@ -103,6 +113,25 @@ async function bootstrap() {
   //    先把 in-flight 请求处理完、关掉数据库连接池，再退出，避免半截请求出错
   app.enableShutdownHooks();
 
+  // ─────── Swagger 接口文档 ───────
+
+  // 自动扫描所有 @ApiTags / @Get / @Post 等装饰器，生成 OpenAPI 规范 + 交互式文档页
+  //   访问 http://localhost:3000/api/docs 就能在浏览器看所有接口、参数、在线试调
+  // 对照 Java 项目的 springdoc-openapi（生成 /swagger-ui.html）
+  // 前端(Vue3)理解：你后端不用再手写接口文档了，框架扫装饰器自动生成网页版 API 列表，
+  //   类似前端 vue-router 的 routes 数组被 devtools 渲染成可点页面，但这里是 HTTP 接口
+  // 注意：swagger 文档路径 /api/docs 不受全局前缀影响，要单独写
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('NestJS Backend API')
+    .setDescription('对照 Java test1-backend 改写的 NestJS 项目接口文档')
+    .setVersion('0.0.1')
+    // .addBearerAuth() // 等下一轮加认证时再开
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, swaggerDocument);
+
+  // ─────── 启动监听 ───────
+
   // 启动 HTTP 服务，端口从 .env 的 PORT 读，默认 3000
   // 对照 Java 的 server.port=8080
   const port = process.env.PORT ?? 3000;
@@ -112,6 +141,7 @@ async function bootstrap() {
   app.get(Logger).log(
     `NestJS app running on http://localhost:${port}/api  (Java 版: http://localhost:8080/test1/api)`,
   );
+  app.get(Logger).log(`Swagger docs on http://localhost:${port}/api/docs`);
 }
 
 // 顶层 await（ESM 模块的特性，Node 14+ 支持）

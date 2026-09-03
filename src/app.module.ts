@@ -9,6 +9,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { UsersModule } from './users/users.module.js';
 import { MoviesModule } from './movies/movies.module.js';
+import { HealthModule } from './health/health.module.js';
 
 @Module({
   imports: [
@@ -87,9 +88,10 @@ import { MoviesModule } from './movies/movies.module.js';
       { name: 'default', ttl: 60_000, limit: 100 },
     ]),
 
-    // 5. 业务模块
+    // 5. 业务模块 + 健康检查
     UsersModule,
     MoviesModule,
+    HealthModule,
   ],
 
   // providers 里挂一个 APP_GUARD = ThrottlerGuard，意思是"给所有 Controller 自动套上限流守卫"
