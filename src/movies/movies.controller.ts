@@ -4,10 +4,13 @@ import { Controller, Get, Param, ParseIntPipe, NotFoundException } from '@nestjs
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MoviesService } from './movies.service.js';
 import { Movie } from './movie.entity.js';
+import { Public } from '../decorators/public.decorator.js';
 
 // @ApiTags('movies')：Swagger 文档分组标签，所有 movies 接口归在一起
 @ApiTags('movies')
 @Controller('movies')
+// 读接口先标 @Public，等下一轮加写操作接口时自动受鉴权保护
+@Public()
 export class MoviesController {
   constructor(private readonly svc: MoviesService) {}
 

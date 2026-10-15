@@ -1,11 +1,15 @@
 {
   "name": "nest-backend",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "version": "1.0.0",
+  "description": "NestJS + TypeORM + MySQL 后端服务（对照 Java Spring Boot 项目 test1-backend 改写，含统一响应/异常、鉴权、限流、日志、健康检查、Swagger）",
+  "author": "nest-backend maintainers",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "build": "nest build",
     "deploy": "nest deploy",
@@ -30,6 +34,7 @@
     "@nestjs/terminus": "^12.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^12.0.0",
+    "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "helmet": "^8.3.0",
@@ -47,6 +52,7 @@
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",

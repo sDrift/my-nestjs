@@ -10,12 +10,23 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { UsersModule } from './users/users.module.js';
 import { MoviesModule } from './movies/movies.module.js';
 import { HealthModule } from './health/health.module.js';
+import { AuthModule } from './auth/auth.module.js';
+import { AuthGuard } from './common/guards/auth.guard.js';
+import { validateEnv } from './config/env.validation.js';
 
 @Module({
   imports: [
-    // 1. 加载 .env 文件到 process.env
+    // 1. 加载 .env 文件到 process.env，并在启动时校验环境变量
     // isGlobal: true 让所有模块都能用 ConfigService，不用每个模块单独 import
-    ConfigModule.forRoot({ isGlobal: true }),
+    // validate: validateEnv —— 启动即校验（缺 DB_HOST 这类必填项直接启动失败），
+    //   属于"配置分层 + 快速失败"的一部分：宁可起不来，也不要带病上线
+    // 对照 Java：相当于 @ConfigurationProperties 上的 @Validated + 自定义校验器
+    // 前端(Vue3)理解：像 main.ts 里 app.mount 前先 assert 关键环境变量，
+    //   配错就在启动日志里一眼看到，而不是运行到某个页面才白屏
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnv,
+    }),
 
     // 2. 注册 Pino 结构化日志
     // 对照 Java 项目的 logback-spring.xml：开发环境按人读格式输出，生产环境输出纯 JSON
@@ -59,22 +70,44 @@ import { HealthModule } from './health/health.module.js';
     //   这里 useFactory 就是个"等依赖就绪再跑"的工厂函数。
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (cfg: ConfigService) => ({
-        type: 'mysql',
-        host: cfg.get<string>('DB_HOST'),
-        port: cfg.get<number>('DB_PORT'),
-        username: cfg.get<string>('DB_USER'),
-        password: cfg.get<string>('DB_PASSWORD'),
-        database: cfg.get<string>('DB_NAME'),
-        autoLoadEntities: true,   // 自动加载每个 Module.forFeature() 注册的实体
-        synchronize: false,        // 不自动改表结构（生产环境务必 false）
-        // 生产环境不要打印全量 SQL（对照 MyBatis 在生产把 log-impl 关掉）
-        // 只在出错和警告时打印；开发环境仍是 ['error', 'warn', 'query']，便于调试
-        // 前端(Vue3)理解：类似 Vite 在生产 build 时关掉 sourcemap、关掉 HMR 详细日志，
-        //   只保留 error 级别；开发时看详细日志方便定位，生产时只看告警避免日志爆炸
-        logging: ['error', 'warn'],
-        timezone: '+08:00',        // 时区，对照 Java URL 里的 serverTimezone=Asia/Shanghai
-      }),
+      useFactory: (cfg: ConfigService) => {
+        // 先判断运行环境：生产环境用更大的连接池 + 更严格的超时
+        // 对照 Java：application-prod.properties 与 application-dev.properties 分开配
+        const isProd = cfg.get<string>('NODE_ENV') === 'production';
+        return {
+          type: 'mysql' as const,
+          host: cfg.get<string>('DB_HOST'),
+          port: cfg.get<number>('DB_PORT'),
+          username: cfg.get<string>('DB_USER'),
+          password: cfg.get<string>('DB_PASSWORD'),
+          database: cfg.get<string>('DB_NAME'),
+          autoLoadEntities: true,   // 自动加载每个 Module.forFeature() 注册的实体
+          synchronize: false,        // 不自动改表结构（生产环境务必 false）
+          // 生产环境不要打印全量 SQL（对照 MyBatis 在生产把 log-impl 关掉）
+          // 只在出错和警告时打印；开发环境仍是 ['error', 'warn', 'query']，便于调试
+          // 前端(Vue3)理解：类似 Vite 在生产 build 时关掉 sourcemap、关掉 HMR 详细日志，
+          //   只保留 error 级别；开发时看详细日志方便定位，生产时只看告警避免日志爆炸
+          logging: ['error', 'warn'],
+          timezone: '+08:00',        // 时区，对照 Java URL 里的 serverTimezone=Asia/Shanghai
+
+          // ── 生产可用性参数（连接池 / 超时 / 重试）──
+          // 对照 Java：HikariCP 的 maximumPoolSize / connectionTimeout / initializationFailTimeout
+          //   生产必须限制连接池上限，否则流量一大就把 MySQL 的连接数打满，
+          //   拖垮同实例上的其它服务（"一个服务雪崩拖死整个库"）。
+          // 前端(Vue3)理解：像 axios 实例设 timeout + 重试；这里管的是"后端到数据库"这条链路，
+          //   池子满了会让请求排队（waitForConnections），而不是直接抛错。
+          extra: {
+            connectionLimit: isProd ? 20 : 10, // 连接池上限：生产 20，开发 10
+            waitForConnections: true,          // 池满时新请求排队等待（而不是立即失败）
+            queueLimit: 0,                     // 排队长度不限（0 = 无限）
+            connectTimeout: 10_000,            // 建连超时 10s，避免网络抖动时一直挂住
+            enableKeepAlive: true,             // 开启 TCP keep-alive，防中间设备把空闲连接掐掉
+            keepAliveInitialDelay: 10_000,     // keep-alive 探测包首次发送延迟
+          },
+          retryAttempts: isProd ? 10 : 3, // 启动时数据库连不上，重试次数（生产更宽容，等 DB 起来）
+          retryDelay: 3_000,              // 每次重试间隔 3s
+        };
+      },
     }),
 
     // 4. 注册限流 ThrottlerModule
@@ -88,21 +121,21 @@ import { HealthModule } from './health/health.module.js';
       { name: 'default', ttl: 60_000, limit: 100 },
     ]),
 
-    // 5. 业务模块 + 健康检查
+    // 5. 业务模块 + 健康检查 + 认证
     UsersModule,
     MoviesModule,
     HealthModule,
+    AuthModule,
   ],
 
-  // providers 里挂一个 APP_GUARD = ThrottlerGuard，意思是"给所有 Controller 自动套上限流守卫"
-  // 对照 Java：类似 WebSecurityConfig 配 filter 在每个请求前拦截
-  // 机制：APP_GUARD 是 NestJS 的特殊 token，挂它后框架会对每个路由自动跑 ThrottlerGuard，
-  //   Guard 在路由匹配后、Controller 方法执行前介入，检查该 IP 在 ttl 窗口内请求数，
-  //   超限就 throw ThrottlerException(429)，没超就放行到 Controller
-  // 前端(Vue3)理解：像全局 router.beforeEach((to, from, next) => ...)，每个路由跳转前都走一遍；
-  //   这里是每个 HTTP 请求到达 Controller 前都先过这个守卫
+  // APP_GUARD：挂在这的守卫会被 NestJS 应用到**所有** Controller 的**所有**路由
+  // 执行顺序：先 ThrottlerGuard（限流），再 AuthGuard（鉴权）
+  //   NestJS 保证顺序按 providers 数组里写的先后
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // 鉴权：读 Authorization Bearer → 查 user 表 → @Public() 跳过
+    // 对照 Java：Spring Security SecurityFilterChain 上注册的 authentication filter
+    { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })
 export class AppModule {}

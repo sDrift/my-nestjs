@@ -1,0 +1,48 @@
+# GitHub Actions：持续集成（CI）
+#
+# 原注释：无（本项目生产化改造新增的 CI 配置）
+# 对照 Java：等价于 Jenkinsfile / GitLab CI 里的 mvn verify 流水线
+#   —— 每次推代码 / 提 PR 自动跑：装依赖 → 静态检查 → 编译 → 单测 → e2e
+# 前端(Vue3)：等价于给你的 Vue 项目配一条 GitHub Actions：npm ci → lint → vitest → build
+#
+# 设计要点：
+#   1) 每次 push 到 main/master、以及任何 PR 都会触发
+#   2) 全程不需要数据库：单测与 e2e 都用 mock，CI 上能无依赖跑通
+#   3) 任何一步失败 → 整个 job 红叉，PR 不允许合并（配保护分支后生效）
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  ci:
+    name: Lint / Build / Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm' # 缓存 npm 下载缓存，后续构建更快
+
+      - name: Install dependencies
+        # --legacy-peer-deps：见 Dockerfile 里的说明（部分 @nestjs 包未声明 NestJS 12 的 peer 范围）
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: E2E tests
+        run: npm run test:e2e

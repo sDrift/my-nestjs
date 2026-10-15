@@ -1,6 +1,6 @@
 // 电影实体类
 // 对照 Java 项目: src/main/java/com/example/test1backend/entity/Movie.java
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, DeleteDateColumn } from 'typeorm';
 
 @Entity('movies') // 对应 MySQL 的 movies 表
 export class Movie {
@@ -18,6 +18,8 @@ export class Movie {
   rating: number;
 
   // 注意：movies 表的 deleted_at 是 date 类型（不是 datetime）
-  @Column({ type: 'date', name: 'deleted_at', nullable: true })
-  deletedAt: Date;
+  // @DeleteDateColumn：和 User 一致，查询会自动追加 deleted_at IS NULL，业务代码不用手写过滤
+  // （只改代码层，synchronize=false 不会动表结构）
+  @DeleteDateColumn({ type: 'date', name: 'deleted_at', nullable: true })
+  deletedAt: Date | null;
 }

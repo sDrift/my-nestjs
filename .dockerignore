@@ -1,0 +1,40 @@
+# .dockerignore：执行 docker build 时排除这些文件/目录，不进构建上下文
+#
+# 为什么需要它（对照 .gitignore）：
+#   1) 体积：node_modules 动辄几百 MB，拷进构建上下文既慢又浪费
+#   2) 安全：.env 里有真实数据库密码，绝不能拷进镜像（镜像一旦泄露=密码泄露）
+#   3) 正确性：宿主机上的 dist/ 可能是旧产物，让镜像内重新编译，避免"带了脏产物"
+# 前端(Vue3)：等价于你 build 时忽略 node_modules/.env，只不过这里是"忽略进 Docker 上下文"
+#
+# 原注释：无（本项目生产化改造新增）
+
+# 依赖与产物（镜像内会重新装/重新编译）
+node_modules
+dist
+coverage
+
+# 版本控制 / CI
+.git
+.gitignore
+.github
+
+# 环境变量（含密码，绝不进镜像；运行时通过 docker-compose / k8s 注入）
+.env
+.env.*
+!.env.example
+
+# 测试代码（生产镜像不需要）
+test
+**/*.spec.ts
+**/*.e2e-spec.ts
+
+# 部署 & 文档 & 本地开发配置
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
+CHANGELOG.md
+.vscode
+.idea
+.trae
+*.log

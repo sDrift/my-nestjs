@@ -16,8 +16,12 @@ import {
   HealthCheckService,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
+import { Public } from '../decorators/public.decorator.js';
 
 @ApiTags('health') // Swagger 文档分组标签：让 /api/health 归在 health 分组下
+// 健康检查必须 @Public：K8s liveness/readiness 探针、负载均衡健康检查都不能带 token，
+//   过不了全局 AuthGuard 就会被 LB 判挂，应用起不来
+@Public()
 @Controller('health')
 export class HealthController {
   // 构造器注入两个 terminus 服务：

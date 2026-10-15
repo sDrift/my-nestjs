@@ -1,0 +1,72 @@
+# docker-compose.yml：一键拉起「应用 + MySQL」的本地/演示编排
+#
+# 原注释：无（本项目生产化改造新增的部署文件）
+# 对照 Java：等价于把一个 Spring Boot 应用 + MySQL 用 docker-compose 编排起来
+# 前端(Vue3)：等价于你本地 `docker compose up` 起 frontend + nginx 的写法
+#
+# ⚠️ 使用前请知悉：
+#   1) 下面所有密码都是占位符（change_me），上线前务必改成强密码，
+#      或（更安全）改成从外部 .env 文件读：env_file: [.env]
+#   2) MySQL 没有把 3306 映射到宿主机——避免和你本机已有的 MySQL 抢端口；
+#      应用通过 compose 内部网络用服务名 `mysql` 连它即可
+#   3) 生产环境请用 k8s / 云数据库，compose 主要用于本地联调和单机小规模部署
+services:
+  # ───────── 数据库 ─────────
+  mysql:
+    image: mysql:8.0
+    container_name: nest-backend-mysql
+    restart: unless-stopped
+    command:
+      # 字符集统一 utf8mb4（支持 emoji / 全字符），时区 +08:00 与 TypeORM 配置对齐
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    environment:
+      MYSQL_ROOT_PASSWORD: change_me_root
+      MYSQL_DATABASE: mydate
+      MYSQL_USER: sTest
+      MYSQL_PASSWORD: change_me
+    volumes:
+      # 数据持久化：容器重建数据也不丢
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 用 mysqladmin ping 探活；app 会 depends_on 这个健康状态，确保 DB 就绪后再启动
+      test:
+        ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-p$$MYSQL_ROOT_PASSWORD']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ───────── 应用 ─────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nest-backend-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy # 等 MySQL 真正能 ping 通再启动 app
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: mysql # compose 内部 DNS：服务名就是主机名
+      DB_PORT: 3306
+      DB_USER: sTest
+      DB_PASSWORD: change_me
+      DB_NAME: mydate
+      # 生产环境 CORS 白名单不能为空（env.validation.ts 会强制校验，为空直接启动失败）
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports:
+      - '3000:3000'
+    healthcheck:
+      # wget 是 alpine 自带的；/api/health 会顺带检查数据库连通性
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  mysql-data:

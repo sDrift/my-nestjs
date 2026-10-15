@@ -125,7 +125,13 @@ async function bootstrap() {
     .setTitle('NestJS Backend API')
     .setDescription('对照 Java test1-backend 改写的 NestJS 项目接口文档')
     .setVersion('0.0.1')
-    // .addBearerAuth() // 等下一轮加认证时再开
+    // 启用 Bearer Auth：swagger UI 右上角会出现 "Authorize" 按钮，
+    //   点进去粘登录返回的 token（不用带 Bearer 前缀，swagger 自动加）
+    //   之后点任何接口的 "Try it out" 都会自动把请求头 Authorization: Bearer <token> 带上
+    // 对照 Java springdoc 的 OpenAPI Bean 里 addSecurityItem(new SecurityScheme().bearer())
+    // 前端(Vue3)理解：像 swagger 内置了一个"全局 Axios request interceptor"，
+    //   你在面板输一次 token，所有请求都自动带 Authorization 头，不用每个接口手动填
+    .addBearerAuth()
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, swaggerDocument);
@@ -142,6 +148,27 @@ async function bootstrap() {
     `NestJS app running on http://localhost:${port}/api  (Java 版: http://localhost:8080/test1/api)`,
   );
   app.get(Logger).log(`Swagger docs on http://localhost:${port}/api/docs`);
+
+  // ─────── 未匹配路由的兜底 404 ───────
+  // 为什么需要它：Nest 只把"注册过的路由"纳入自己的异常体系；
+  //   一个没匹配上任何路由的请求（如 GET /api/nope），会掉到 Express 内置的兜底处理器，
+  //   返回一段纯文本/HTML（Cannot GET /api/nope），绕过 AllExceptionsFilter，
+  //   让"所有错误都返回 { code, message, data } 统一格式"这个承诺出现例外。
+  //
+  // 为什么挂在 listen 之后：Express 按"注册顺序"匹配中间件，
+  //   此处所有 Controller 路由 + Swagger 路由都已注册完毕，
+  //   所以这里只会捡到"前面都没匹配上"的请求，不会抢走正常路由；
+  //   而 Express 的内置 404 是"中间件栈耗尽后的最终回调"，本中间件必然先于它执行。
+  // 对照 Java：等价于 Spring 的 /error 兜底端点（ErrorController），或 web.xml 的 <error-page>
+  // 前端(Vue3)理解：相当于 vue-router 的兜底路由 { path: '/:pathMatch(.*)*', component: NotFound }，
+  //   保证"所有 404 都进同一个 404 页面"，而不是浏览器默认的空白错误页
+  app.use((req: Request, res: Response) => {
+    res.status(404).json({
+      code: 404,
+      message: `Cannot ${req.method} ${req.originalUrl}`,
+      data: null,
+    });
+  });
 }
 
 // 顶层 await（ESM 模块的特性，Node 14+ 支持）

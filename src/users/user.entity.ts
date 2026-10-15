@@ -1,6 +1,6 @@
 // 用户实体类
 // 对照 Java 项目: src/main/java/com/example/test1backend/entity/User.java
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, DeleteDateColumn } from 'typeorm';
 import { Exclude } from 'class-transformer';
 
 @Entity('users') // 对应 MySQL 的 users 表
@@ -35,9 +35,18 @@ export class User {
   @Column({ type: 'datetime', name: 'created_at', nullable: true })
   createdAt: Date;
 
-  // 软删除字段（与 Java 项目一致，SQL 里手动加 WHERE deleted_at IS NULL）
-  @Column({ type: 'datetime', name: 'deleted_at', nullable: true })
-  deletedAt: Date;
+  // 软删除标记字段（数据库列仍叫 deleted_at，不改表结构，synchronize=false 也不会动表）
+  // @DeleteDateColumn 是 TypeORM 的"软删除"专用装饰器，相比普通 @Column 多出三个能力：
+  //   1) find / findOne / findAndCount 等查询会自动追加 WHERE deleted_at IS NULL，
+  //      业务代码不用再手写 `where: { deletedAt: IsNull() }` 去过滤已删除数据
+  //   2) repo.softDelete(id) 会把该列置为当前时间；repo.restore(id) 可恢复
+  //   3) 想看"连已删除的一起"时，查询传 withDeleted: true 即可
+  // 对照 Java：等价于 Hibernate 的 @SQLDelete(sql="UPDATE ... SET deleted_at=NOW()") +
+  //   @Where(clause="deleted_at IS NULL")，或 MyBatis-Plus 的 @TableLogic
+  // 前端(Vue3)理解：像给列表数据套了一层默认过滤器——默认只显示"未删除"的，
+  //   要看回收站时再额外打开 withDeleted 开关（类似前端列表默认隐藏已归档项）
+  @DeleteDateColumn({ type: 'datetime', name: 'deleted_at', nullable: true })
+  deletedAt: Date | null;
 
   // @Exclude：当前登录 token 同样属于敏感信息，不应随用户接口外泄
   // 前端(Vue3)理解：类似你在 Pinia store 里存了 token，但 export 给组件时只暴露用户信息
